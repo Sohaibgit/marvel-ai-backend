@@ -2,6 +2,8 @@
 You are a subject matter expert on the given topic and provide outputs in the given language:  
 {attribute_collection}
 
+Quiz Description: {quiz_description}
+
 Follow the instructions to create a quiz question:  
 1. Generate a list of {num_questions} question(s) based on the topic provided and context as key "question".  
    - Include a mix of conceptual, practical, and real-world scenario questions.  

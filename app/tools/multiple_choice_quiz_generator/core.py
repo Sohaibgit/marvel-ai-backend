@@ -1,6 +1,9 @@
 from app.utils.document_loaders import get_docs
 from app.services.logger import setup_logger
 from app.tools.multiple_choice_quiz_generator.tools import QuizBuilder
+from langsmith import Client
+
+client = Client()
 from app.api.error_utilities import LoaderError, ToolExecutorError
 
 logger = setup_logger()

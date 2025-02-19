@@ -6,6 +6,11 @@
             "type": "text"
         },
         {
+            "label": "Quiz Description",
+            "name": "quiz_description",
+            "type": "text"
+        },
+        {
             "label": "Number of Questions",
             "name": "n_questions",
             "type": "number"
