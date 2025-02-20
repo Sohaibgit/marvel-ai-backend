@@ -28,7 +28,7 @@ def read_root():
     quiz = executor(
         topic="Science Terms Vocabulary - 7th Grade Physics, Chemistry, and Biology",
         n_questions=10,
-        file_url=file_path,
+        file_url=file_url,
         file_type="pdf",
         lang="en"
     )
