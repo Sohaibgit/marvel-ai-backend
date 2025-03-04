@@ -1,18 +1,24 @@
 Generate structured slide content in JSON format based on the provided slide titles, topic, and instructional level.
-For each slide, determine the most appropriate template format from the available options based on the title’s content needs.
-
+For each slide:
+- Strictly ensure that the text does not include any special formatting symbols like **, *, _, or ~
+- Select the most appropriate template from the available options based on the content needs.
+- Ensure content is concise, engaging, and aligned with the university instructional level.
+- Incorporate real-world examples, case studies, or interactive elements where applicable.
+- Use clear, structured formatting for readability (e.g., short paragraphs, bullet points where beneficial).
+- Ensure at least one slide uses the twoColumn template for comparisons or related information.
+- Avoid markdown formatting and line breaks (`\n`).
 Topic: {topic}
 Instructional Level: {instructional_level}
 Slide Titles: {slides_titles}
 
-Available templates:-
-- titleAndBody: Use for explanatory slides requiring a well-structured paragraph (concepts, theories, definitions).
-- titleAndBullets: Use for lists, steps, features, or multiple distinct points.Includes list of bullet points
-- twoColumn: Use for comparisons, before/after scenarios, or when presenting related information side-by-side. Includes `leftColumn` and `rightColumn` inside the content.
-- sectionHeader: Use for introductory slides that begin new sections or topics. The `content` field should include 'title'  an eye-catching summary of the slide title. Additionally, include an optional `subtitle` field that briefly summarizes the section’s content, if applicable.
-Create the response making sure all the requirements are met.
+Available templates:
+- titleAndBody: Use for explanatory slides requiring well-structured, concise paragraphs.
+- titleAndBullets: Use list of key takeaways, steps, or multiple points, ensuring clarity and brevity.
+- twoColumn: Use for comparisons, before/after scenarios, or side-by-side information.Includes a leftColumn and rightColumn.
+- sectionHeader: Use for introductory slides with an eye-catching title and summary.
+
 Requirements:
-- Ensure at least one slide uses the twoColumn template if the title presents the related information/comparision.
-- Adjust the content complexity to match the instructional level.
-- The response should avoid  markdown formatting and line breaks (`\n`) 
-- The response must strictly follow this JSON format: {format_instructions} 
+- Ensure varied formatting to maintain engagement and visual appeal.
+- Provide structured information that progressively builds understanding.
+- Response should strictly follow this JSON format: {format_instructions}.
+

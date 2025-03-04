@@ -23,7 +23,9 @@ class Table(BaseModel):
     title: str = Field(..., description="The title of the table section")
     headers: List[str] = Field(..., description="Column headers for the table")
     rows: List[List[str]] = Field(..., description="Table rows containing structured data")
-
+class GenerateNotesOutput(BaseModel):
+    title: str = Field(..., description="Title of the generated notes")
+    notes:Optional[ Union[ BulletPoints, Paragraph, Table]] = Field(..., description="Generated notes in the specified format")
 
 class NoteGeneratorPipeline:
     def __init__(self, args=None , verbose=False):       

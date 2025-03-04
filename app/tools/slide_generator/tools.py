@@ -9,7 +9,7 @@ from langchain_core.output_parsers import JsonOutputParser
 from langchain_google_genai import GoogleGenerativeAI
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_core.documents import Document
-
+import re
 logger = setup_logger(__name__)
 
 def read_text_file(file_path):
@@ -71,55 +71,105 @@ class SlideGenerator:
         # logger.info(f"Chain compilation complete")
 
         # return chain
-    def validate_slides_content(self,response, topic, instructional_level):
-        """Validates that slide content matches the requested topic and level."""
-        # Check if topic keywords appear in slides
-        topic_keywords = set(topic.lower().split())
+#   def validate_slides_content(self,response, topic, instructional_level):
+        # """Validates that slide content matches the requested topic and level."""
+        # # Check if topic keywords appear in slides
+        # topic_keywords = set(topic.lower().split())
         
-        # Track coverage metrics
-        topic_coverage = 0
-        garbage_coverage =0
-        template_requirements_met = False
-        slides = response["slides"]
-        whole_text_generated = ""
+        # # Track coverage metrics
+        # topic_coverage = 0
+        # garbage_coverage =0
+        # template_requirements_met = False
+        # slides = response["slides"]
+        # whole_text_generated = ""
 
-        for slide in slides:
-            # Check topic relevance
-            if slide["template"] == "twoColumn":
-                 # Check template requirements
-                template_requirements_met = True
-                slide_text = (slide['title']+ " " + (slide["content"]["leftColumn"] or "") + " " + (slide["content"]["rightColumn"]or "")).lower()
-                whole_text_generated += slide_text
+        # for slide in slides:
+        #     # Check topic relevance
+
+        #     if slide["template"] == "twoColumn":
+        #          # Check template requirements
+        #         template_requirements_met = True
+        #         slide_text = (slide['title']+ " " + (slide["content"]["leftColumn"] or "") + " " + (slide["content"]["rightColumn"]or "")).lower()
+        #         whole_text_generated += slide_text
                
                 
-            elif slide["template"] == "titleAndBullets":      
-                contents = slide["content"]          
-                slide_text = (slide['title'] + " " + " ".join(content for content  in contents)).lower()
-                whole_text_generated += slide_text
+        #     elif slide["template"] == "titleAndBullets":      
+        #         contents = slide["content"]          
+        #         slide_text = (slide['title'] + " " + " ".join(content for content  in contents)).lower()
+        #         whole_text_generated += slide_text
 
-            elif slide["template"] == "sectionHeader":      
-                slide_text = (slide['title'] + " " + (slide["content"]["title"] or "")+ " " +(slide["content"]["subtitle"] if slide["content"]["subtitle"] else " " )).lower()
-                whole_text_generated += slide_text
-            else:
-                slide_text = (slide['title'] + " " + (slide["content"] or "")).lower()
-                whole_text_generated += slide_text
-             #check if there are any * or /n in the slides
-            if "*" in whole_text_generated or "\n" in whole_text_generated:
-                garbage_coverage += 1
-            matches = sum(1 for keyword in topic_keywords if keyword in slide_text)
-            if matches > 0:
-                topic_coverage += 1
+        #     elif slide["template"] == "sectionHeader":      
+        #         slide_text = (slide['title'] + " " + (slide["content"]["title"] or "")+ " " +(slide["content"]["subtitle"] if slide["content"]["subtitle"] else " " )).lower()
+        #         whole_text_generated += slide_text
+        #     else:
+        #         slide_text = (slide['title'] + " " + (slide["content"] or "")).lower()
+        #         whole_text_generated += slide_text
+        #      #check if there are any * or /n in the slides
+        #     if "*" in whole_text_generated or "\n" in whole_text_generated:
+        #         garbage_coverage += 1
+        #     matches = sum(1 for keyword in topic_keywords if keyword in slide_text)
+        #     if matches > 0:
+        #         topic_coverage += 1
           
               
         
-        # Calculate coverage percentage
-        coverage_percentage = (topic_coverage / len(response["slides"])) * 100
-        garbage_coverage_percentage = (garbage_coverage / len(response["slides"])) * 100
+        # # Calculate coverage percentage
+        # coverage_percentage = (topic_coverage / len(response["slides"])) * 100
+        # garbage_coverage_percentage = (garbage_coverage / len(response["slides"])) * 100
+        # return {
+        #     "topic_coverage": coverage_percentage,
+        #     "template_requirements_met": template_requirements_met,
+        #     "garbage_coverage_percentage": garbage_coverage_percentage,
+        #     "valid": coverage_percentage > 70 and template_requirements_met and garbage_coverage_percentage ==0
+        # }
+   
+
+    def validate_slides_content(self, response, topic, instructional_level):
+        """Validates that slide content matches the requested topic and level."""
+        topic_keywords = set(topic.lower().split())
+        topic_coverage = 0
+        garbage_coverage = 0
+        template_requirements_met = False
+        slides = response["slides"]
+        whole_text_generated = ""
+        
+        def clean_text(text):
+            """Removes Markdown formatting and newlines from the text."""
+            text = re.sub(r'[*_`#>-]', '', text)  # Remove Markdown symbols
+            text = re.sub(r'\n+', ' ', text)  # Replace newlines with space
+            return text.strip()
+        
+        for slide in slides:
+            slide_text = ""
+            if slide["template"] == "twoColumn":
+                template_requirements_met = True
+                
+            if isinstance(slide["content"], list):
+                slide_text = ' '.join(slide["content"])
+            elif isinstance(slide["content"], dict):
+                slide_text = ' '.join(slide["content"].values())
+            else:
+                slide_text = slide["content"]
+            
+            slide_text = clean_text(slide_text)
+            whole_text_generated += slide_text + " "
+            
+            if any(keyword in slide_text.lower() for keyword in topic_keywords):
+                topic_coverage += 1
+            
+        # Check for Markdown remnants or excessive newlines
+        if any(char in whole_text_generated for char in ['*', '\n', '`', '_']):
+            garbage_coverage += 1
+        
+        coverage_percentage = (topic_coverage / len(slides)) * 100
+        garbage_coverage_percentage = (garbage_coverage / len(slides)) * 100
+        
         return {
+           
             "topic_coverage": coverage_percentage,
             "template_requirements_met": template_requirements_met,
             "garbage_coverage_percentage": garbage_coverage_percentage,
-            "valid": coverage_percentage > 70 and template_requirements_met and garbage_coverage_percentage ==0
+            "valid": coverage_percentage > 70 and template_requirements_met and garbage_coverage_percentage == 0
         }
 
     def compile_with_context(self):
@@ -165,11 +215,7 @@ class Slide(BaseModel):
     title: str = Field(..., description="The title of the slide")
     template: str = Field(..., description="The slide template type: sectionHeader, titleAndBody, titleAndBullets, twoColumn")
     content: Optional[Union[str, list, dict, Any]] = Field(None, description="Content of the slide, can be string, list, dict, or any type")
-    # subtitle: Optional[str] = Field(None, description="For sectionHeader slides, an optional subtitle")
-    # body: Optional[str] = Field(None, description="For titleAndBody slides, a paragraph of text")
-    # bullets: Optional[List[str]] = Field(None, description="For titleAndBullets slides, a list of bullet points")
-    # leftColumn: Optional[str] = Field(None, description="For twoColumn slides, the left column content")
-    # rightColumn: Optional[str] = Field(None, description="For twoColumn slides, the right column content")
+
 
 class SlidePresentation(BaseModel):
     slides: List[Slide] = Field(..., description="The complete set of slides in the presentation")

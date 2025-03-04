@@ -1,13 +1,13 @@
 import pytest
 from app.tools.notes_generator.core import executor
-from app.tools.notes_generator.tools import GenerateNotesOutput
+
 from app.tools.notes_generator.tools import NoteGeneratorPipeline
 from app.tools.notes_generator.tools import Document
 from app.tools.notes_generator.core import NoteGeneratorArgs
 from langchain_core.output_parsers import JsonOutputParser
 from app.tools.notes_generator.tools import BulletPoints
 
-
+ 
 base_attributes = {
     "focus": "Summarize the key steps of photosynthesis.",
     "page_layout": "bullet points",
@@ -41,12 +41,12 @@ def test_executor_normal_operation():
         verbose=False        
     )
     
-    assert isinstance(result, GenerateNotesOutput)
+    assert isinstance(result, BulletPoints)
     assert hasattr(result, "title")
     assert hasattr(result, "notes")
 
 
-
+ 
 def test_executor_no_page_layout():
     """Test the executor function with no page layout provided."""
     with pytest.raises(ValueError, match="No page layout provided for note generation."):
