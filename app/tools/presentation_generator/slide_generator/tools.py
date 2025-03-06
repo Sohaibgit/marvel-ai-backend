@@ -124,53 +124,55 @@ class SlideGenerator:
         # }
    
 
-    def validate_slides_content(self, response, topic, instructional_level):
+    def validate_slides_content(self, response, topic):
         """Validates that slide content matches the requested topic and level."""
         topic_keywords = set(topic.lower().split())
         topic_coverage = 0
         garbage_coverage = 0
         template_requirements_met = False
         slides = response["slides"]
-        whole_text_generated = ""
-        
-        def clean_text(text):
-            """Removes Markdown formatting and newlines from the text."""
-            text = re.sub(r'[*_`#>-]', '', text)  # Remove Markdown symbols
-            text = re.sub(r'\n+', ' ', text)  # Replace newlines with space
-            return text.strip()
-        
-        for slide in slides:
-            slide_text = ""
-            if slide["template"] == "twoColumn":
-                template_requirements_met = True
-                
-            if isinstance(slide["content"], list):
-                slide_text = ' '.join(slide["content"])
-            elif isinstance(slide["content"], dict):
-                slide_text = ' '.join(slide["content"].values())
-            else:
-                slide_text = slide["content"]
+        try:
+            if  len(slides) == 0:
+                raise ValueError("No slides found in the response")
+            for slide in slides:
+                slide_text = ""
+                if slide["template"] == "twoColumn":
+                    template_requirements_met = True
+                    
+                if isinstance(slide["content"], list):
+                    slide_text = ' '.join(slide["content"])
+                elif isinstance(slide["content"], dict):
+                    slide_text = ' '.join(slide["content"].values())
+                else:
+                    slide_text = slide["content"]
+                # Check for topic keywords in the slide text
+                if any(keyword in slide_text.lower() for keyword in topic_keywords):
+                    topic_coverage += 1
             
-            slide_text = clean_text(slide_text)
-            whole_text_generated += slide_text + " "
-            
-            if any(keyword in slide_text.lower() for keyword in topic_keywords):
-                topic_coverage += 1
-            
-        # Check for Markdown remnants or excessive newlines
-        if any(char in whole_text_generated for char in ['*', '\n', '`', '_']):
-            garbage_coverage += 1
+            # Check for Markdown remnants or excessive newlines
+                if any(char in slide_text for char in ['*', '\n', '`', '_']):
+                    garbage_coverage += 1
         
-        coverage_percentage = (topic_coverage / len(slides)) * 100
-        garbage_coverage_percentage = (garbage_coverage / len(slides)) * 100
+            coverage_percentage = (topic_coverage / len(slides)) * 100
+            garbage_coverage_percentage = (garbage_coverage / len(slides)) * 100
         
-        return {
-           
-            "topic_coverage": coverage_percentage,
-            "template_requirements_met": template_requirements_met,
-            "garbage_coverage_percentage": garbage_coverage_percentage,
-            "valid": coverage_percentage > 70 and template_requirements_met and garbage_coverage_percentage == 0
-        }
+            return {
+            
+                "topic_coverage": coverage_percentage,
+                "template_requirements_met": template_requirements_met,
+                "garbage_coverage_percentage": garbage_coverage_percentage,
+                "valid": coverage_percentage > 70 and template_requirements_met and garbage_coverage_percentage == 0
+            }
+            
+        except ValueError as e:
+            raise ValueError(e)
+        # def clean_text(text):
+        #     """Removes Markdown formatting and newlines from the text."""
+        #     text = re.sub(r'[*_`#>-]', '', text)  # Remove Markdown symbols
+        #     text = re.sub(r'\n+', ' ', text)  # Replace newlines with space
+        #     return text.strip()
+        
+        
 
     def compile_with_context(self):
         # Return the chain
@@ -204,11 +206,11 @@ class SlideGenerator:
 
         logger.info(f"Generated response: {response}")
          # Add validation metrics
-        # validation_results = self.validate_slides_content(response=response, topic=self.args.topic,instructional_level= self.args.instructional_level)
-        # logger.info(f"Response validation: {validation_results}")
+        validation_results = self.validate_slides_content(response=response, topic=self.args.topic)
+        logger.info(f"Response validation: {validation_results}")
         
-        # if not validation_results["valid"]:
-        #     logger.warning(f"Generated content may not fully match the requested topic")
+        if not validation_results["valid"]:
+            logger.warning(f"Generated content may not fully match the requested topic")
         return response
 
 class Slide(BaseModel):

@@ -6,22 +6,6 @@ from app.tools.presentation_generator.slide_generator.tools import SlideGenerato
 from app.services.logger import setup_logger
 logger = setup_logger()
 
-@pytest.fixture
-def mock_slide_data():
-    return {
-        "slides": [
-            {
-                "title": "Introduction to Python",
-                "template": "titleAndBullets",
-                "content": ["Python is a programming language"]
-            },
-            {
-                "title": "Basic Syntax",
-                "template": "titleBody",
-                "content": "Python syntax is simple"
-            }
-        ]
-    }
 
 def executor(
              slides_titles: List[str],
@@ -32,6 +16,7 @@ def executor(
     try: 
         if (not (slides_titles and topic and instructional_level)):
             logger.info(f"Missing required inputs.")
+            raise ValueError("Missing required inputs")
          
         if(slides_titles and topic and instructional_level):
             logger.info(f"Generating slide outlines. from {topic} for {instructional_level} level")

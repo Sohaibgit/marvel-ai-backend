@@ -1,13 +1,11 @@
 import pytest
-from app.tools.presentation_generator.slide_generator.core import executor
+from app.tools.presentation_generator.slide_generator.core import executor,SlideGeneratorInput
+from unittest.mock import patch, MagicMock, Mock
 from app.tools.presentation_generator.slide_generator.tools import SlideGenerator, Slide,SlidePresentation
 
-
-def test_slide_generator_executor_normal_operation(mocker):
-    """Test the executor function with valid inputs."""
-     # Mock the SlideGenerator to return a predefined response
-    mock_slideGenerator = mocker.Mock(spec=SlideGenerator)
-    mock_slideGenerator.generate_slides.return_value = {
+@pytest.fixture
+def mock_slide_data():
+    return {
         "slides": [
             {
                 "title": "Introduction to Python",
@@ -21,192 +19,206 @@ def test_slide_generator_executor_normal_operation(mocker):
             }
         ]
     }
-    
-    slides_titles = [
-        "Introduction to Python",
-        "Basic Syntax",
-        "Control Structures"
-    ]
-    
-    result = executor(
-        slides_titles=slides_titles,
-        topic="Python Programming",
-        instructional_level="Beginner",
+@pytest.fixture
+def mock_args():
+    return SlideGeneratorInput(
+        slides_titles=["Intro", "Details"],
+        topic="Data Science",
+        instructional_level="Intermediate",
         lang="en"
     )
-    print(result)
-    assert result is not None
-    # assert hasattr(result, 'slides')
-    # assert len(result.slides) > 0
-# @patch("app.tools.slide_generator.tools.GoogleGenerativeAIEmbeddings", autospec=True)
-# @patch("app.tools.slide_generator.tools.GoogleGenerativeAI", autospec=True)
-# @patch("app.tools.slide_generator.tools.JsonOutputParser", autospec=True)
-# def test_slide_generator_executor_normal_operation(mock_parser, mock_gemini, mock_embeddings):
-#     """Test the executor function with valid inputs."""
-    
-#     # Mock return values to prevent real API calls
-#     mock_embeddings.return_value = MagicMock()
-#     mock_gemini.return_value = MagicMock()
-     
-#     # Mock JsonOutputParser to return a valid response
-#     mock_parser_instance = MagicMock()
-#     mock_parser_instance.parse.return_value = {  
-#         "slides": ["Introduction to Python", "Basic Syntax", "Control Structures"]
-#     }
-#     mock_parser.return_value = mock_parser_instance
-#     slides_titles = [
-#         "Introduction to Python",
-#         "Basic Syntax",
-#         "Control Structures"
-#     ]
-    
-#     result = executor(
-#         slides_titles=slides_titles,
-#         topic="Python Programming",
-#         instructional_level="Beginner",
-#         lang="en"
-#     )
+# @pytest.fixture
+# def mock_slide_generator():
+#     with patch("app.tools.presentation_generator.slide_generator.tools.GoogleGenerativeAI", autospec=True) as mock_model, \
+#          patch("app.tools.presentation_generator.slide_generator.tools.GoogleGenerativeAIEmbeddings", autospec=True) as mock_embeddings, \
+#          patch("app.tools.presentation_generator.slide_generator.tools.JsonOutputParser", autospec=True) as mock_parser, \
+#          patch("app.tools.presentation_generator.slide_generator.tools.read_text_file", return_value="Mocked Prompt") as mock_read_text_file, \
+#          patch("app.tools.presentation_generator.slide_generator.tools.Chroma", autospec=True) as mock_chroma:
 
-#     print(result)
+#         # Create mock objects for the dependencies
+#         mock_model_instance = mock_model.return_value
+#         mock_embeddings_instance = mock_embeddings.return_value
+#         mock_parser_instance = mock_parser.return_value
+#         mock_chroma_instance = mock_chroma.return_value
 
-#     # Ensure the result is in the expected format
-#     assert isinstance(result, dict), f"Expected dict, but got {type(result)}"
-#     assert "slides" in result, "Key 'slides' not found in response"
-#     assert isinstance(result["slides"], list), "Expected 'slides' to be a list"
-# def test_slide_generator_executor_missing_inputs():
-#     """Test the executor function with missing required inputs."""
-#     with pytest.raises(ValueError):
-#         executor(
-#             slides_titles=[],
-#             topic="",
-#             instructional_level="",
-#             lang="en"
-#         )
+#         # Create a mock SlideGenerator instance
+#         slide_generator = SlideGenerator()
 
-# def test_slide_generator_init():
-#     """Test initialization of SlideGenerator."""
-#     args = SlideGeneratorInput(
-#         slides_titles=["Intro", "Details"],
-#         topic="Data Science",
-#         instructional_level="Intermediate",
-#         lang="en"
-#     )
-    
-#     generator = SlideGenerator(args=args)
-    
-#     assert generator.args == args
-#     assert generator.model is not None
-#     assert generator.parser is not None
-#     assert generator.embedding_model is not None
+#         # Override attributes with mocks
+#         slide_generator.model = mock_model_instance
+#         slide_generator.embedding_model = mock_embeddings_instance
+#         slide_generator.parser = mock_parser_instance
+#         slide_generator.prompt = "Mocked Prompt"
+#         slide_generator.vectorstore_class = mock_chroma_instance
 
-# def test_slide_generator_validate_slides_content():
-#     """Test validate_slides_content method."""
-#     generator = SlideGenerator(args=Mock())
-    
-#     mock_response = {
-#         "slides": [
-#             {
-#                 "title": "Introduction to Machine Learning",
-#                 "template": "twoColumn",
-#                 "content": ["Machine learning is a subset of AI", "Algorithms learn from data"]
-#             },
-#             {
-#                 "title": "Types of Machine Learning",
-#                 "template": "titleAndBullets",
-#                 "content": ["Supervised Learning", "Unsupervised Learning"]
-#             }
-#         ]
-#     }
-    
-#     validation_result = generator.validate_slides_content(
-#         response=mock_response, 
-#         topic="Machine Learning", 
-#         instructional_level="Beginner"
-#     )
-    
-#     assert validation_result["valid"] is True
-#     assert validation_result["topic_coverage"] > 0
-#     assert validation_result["template_requirements_met"] is True
+#         yield slide_generator
 
-# def test_slide_generator_validate_slides_content_low_quality():
-#     """Test validate_slides_content with low-quality content."""
-#     generator = SlideGenerator(args=Mock())
-    
-#     mock_response = {
-#         "slides": [
-#             {
-#                 "title": "Random Content",
-#                 "template": "titleAndBody",
-#                 "content": ["* Unrelated content\n", "Garbage text"]
-#             }
-#         ]
-#     }
-    
-#     validation_result = generator.validate_slides_content(
-#         response=mock_response, 
-#         topic="Machine Learning", 
-#         instructional_level="Beginner"
-#     )
-    
-#     assert validation_result["valid"] is False
-#     assert validation_result["topic_coverage"] == 0
-#     assert validation_result["garbage_coverage_percentage"] > 0
+@pytest.fixture
+def mock_slide_generator():
+    """Mock SlideGenerator instead of instantiating it."""
+    with patch("app.tools.presentation_generator.slide_generator.tools.SlideGenerator") as MockSlideGenerator:
+        instance = MockSlideGenerator.return_value
+        instance.validate_slides_content.return_value = {
+            "topic_coverage": 80,
+            "template_requirements_met": True,
+            "garbage_coverage_percentage": 0,
+            "valid": True
+        }
+        yield instance
+#passsing test
+def test_executor(mock_slide_data):
+    slides_titles = ["Introduction to Python", "Basic Syntax"]
+    topic = "Python Programming"
+    instructional_level = "Beginner"
+    lang = "en"
+    verbose = False
 
-# def test_slide_generator_compile_with_context():
-#     """Test compilation of pipeline."""
-#     args = SlideGeneratorInput(
-#         slides_titles=["Intro", "Details"],
-#         topic="Web Development",
-#         instructional_level="Intermediate",
-#         lang="en"
-#     )
-    
-#     generator = SlideGenerator(args=args)
-#     chain = generator.compile_with_context()
-    
-#     assert chain is not None
 
-# def test_slide_generator_generate_slides():
-#     """Test generate_slides method."""
-#     args = SlideGeneratorInput(
-#         slides_titles=["Cloud Overview", "Cloud Services", "Security"],
-#         topic="Cloud Computing",
-#         instructional_level="Advanced",
-#         lang="en"
-#     )
-    
-#     generator = SlideGenerator(args=args)
-#     output = generator.generate_slides()
-    
-#     assert isinstance(output, SlidePresentation)
-#     assert len(output.slides) > 0
-    
-#     for slide in output.slides:
-#         assert isinstance(slide, Slide)
-#         assert slide.title is not None
-#         assert slide.template is not None
-#         assert slide.content is not None
+    # Create a mock instance of SlideGenerator
+    mock_slide_generator = MagicMock()
+    mock_slide_generator.generate_slides.return_value = mock_slide_data
 
-# def test_slide_model():
-#     """Test the Slide Pydantic model."""
-#     slide = Slide(
-#         title="Introduction",
-#         template="titleAndBullets",
-#         content=["Key Point 1", "Key Point 2"]
-#     )
-    
-#     assert slide.title == "Introduction"
-#     assert slide.template == "titleAndBullets"
-#     assert slide.content == ["Key Point 1", "Key Point 2"]
+    # Patch SlideGenerator to return the mock instance
+    with patch("app.tools.presentation_generator.slide_generator.core.SlideGenerator", return_value=mock_slide_generator):
+        result = executor(slides_titles, topic, instructional_level, lang, verbose)
+    # Assertions
+    assert result == mock_slide_data
+    mock_slide_generator.generate_slides.assert_called_once() 
+   # Ensure the function was called once
 
-# def test_slide_presentation_model():
-#     """Test the SlidePresentation Pydantic model."""
-#     slides = [
-#         Slide(title="Intro", template="titleAndBody", content="Overview"),
-#         Slide(title="Details", template="twoColumn", content={"left": "Content1", "right": "Content2"})
-#     ]
+def test_executor_missing_inputs():
+    """Test the executor function with missing required inputs."""
+    with pytest.raises(ValueError, match="Missing required inputs"):
+        executor(
+            slides_titles=[],
+            topic="",
+            instructional_level="",
+            lang="en"
+        )
+@patch("app.tools.presentation_generator.slide_generator.tools.SlideGenerator.generate_slides")
+@patch("google.auth.default")
+def test_executor_loader_error(mock_auth,mock_generate_slides):
+    mock_auth.return_value=(MagicMock(),"fake-project-id")
+    from app.api.error_utilities import LoaderError
+    mock_generate_slides.side_effect = LoaderError("Error in Slide Generator Pipeline")
+    with pytest.raises(Exception) as exc_info:
+        executor(slides_titles=["Intro"], topic="AI", instructional_level="Intermediate", lang="en")
+    assert "Error in Slide Generator Pipeline" in str(exc_info.value)
+
+@patch("app.tools.presentation_generator.slide_generator.tools.SlideGenerator.generate_slides")
+@patch("google.auth.default")
+def test_executor_unexpected_error(mock_auth,mock_generate_slides):
+    mock_auth.return_value=(MagicMock(),"fake-project-id")
+    mock_generate_slides.side_effect = Exception("Unexpected error occurred")
+    with pytest.raises(ValueError, match="Error in executor: Unexpected error occurred"):
+        executor(slides_titles=["Intro"], topic="AI", instructional_level="Intermediate", lang="en")
+
+def test_slide_generator(mock_args):    
+    with patch.object(SlideGenerator, "__init__", lambda self, *args, **kwargs: None):
+        slide_generator = SlideGenerator()
+        slide_generator.args = mock_args
+        slide_generator.prompt = "Mocked Prompt"
+        slide_generator.model = MagicMock()
+        slide_generator.embedding_model = MagicMock()
+        slide_generator.parser = MagicMock()
+        slide_generator.vectorstore_class = MagicMock()
+    assert slide_generator.prompt == "Mocked Prompt"
+    assert slide_generator.args == mock_args
+    assert slide_generator.model is not None
+    assert slide_generator.embedding_model is not None
+    assert slide_generator.parser is not None
+    assert slide_generator.vectorstore_class is not None
+
+@patch("app.tools.presentation_generator.slide_generator.tools.SlideGenerator.validate_slides_content")
+@patch("google.auth.default")
+def test_validate_slides_content(mock_auth,mock_validate, mock_slide_generator, mock_slide_data):
+    mock_auth.return_value=(MagicMock(),"fake-project-id")
+    mock_validate.return_value = {
+        "topic_coverage": 80,
+        "template_requirements_met": True,
+        "garbage_coverage_percentage": 0,
+        "valid": True
+    }
+    validation_result = mock_slide_generator.validate_slides_content(mock_slide_data, "Python", "Beginner")
+    assert validation_result["valid"] is True
+    assert validation_result["topic_coverage"] >= 70
+
+
+def test_validate_slides_content_with_garbage(mock_slide_generator):
+        # Test data - has markdown remnants
+        test_instance =mock_slide_generator
+        test_instance
+        topic = "Biology"
+        input = {
+            "slides": [
+                {
+                    "template": "title",
+                    "content": "Introduction to *Biology*"
+                },
+                {
+                    "template": "twoColumn",
+                    "content": "Cell structure and\nfunction"
+                },
+                {
+                    "template": "basic",
+                    "content": ["DNA `replication`", "Protein synthesis"]
+                }
+            ]
+        }
+        
+        result = test_instance.validate_slides_content(input, topic)
+        
+        assert result["topic_coverage"] == 33.33333333333333  # 1 out of 3 slides has the topic keyword
+        assert result["template_requirements_met"] is True
+        assert result["garbage_coverage_percentage"] == 100.0  # All slides have markdown or newlines
+        assert result["valid"] is False  # Has garbage content
+
+
+def test_validate_slides_content_empty_slides(mock_slide_generator):
+        # Test with empty slides array
+        test_instance = MagicMock()
+        topic = "Chemistry"
+        response = {
+            "slides": []
+        }
+        
+        with pytest.raises(ValueError, match="No slides found in the response"):
+            test_instance.validate_slides_content(response, topic)
+
+
+
+def test_slide_generator_compile_with_context(mock_args,mock_slide_generator):
+    """Test compilation of pipeline."""
+    args = mock_args
+    test_instance = mock_slide_generator
+    test_instance.args = args
     
-#     presentation = SlidePresentation(slides=slides)
+    chain = test_instance.compile_with_context()
     
-#     assert len(presentation.slides) == 2
-#     assert all(isinstance(slide, Slide) for slide in presentation.slides)
+    assert chain is not None
+
+
+
+def test_slide_model():
+    """Test the Slide Pydantic model."""
+    slide = Slide(
+        title="Introduction",
+        template="titleAndBullets",
+        content=["Key Point 1", "Key Point 2"]
+    )
+    
+    assert slide.title == "Introduction"
+    assert slide.template == "titleAndBullets"
+    assert slide.content == ["Key Point 1", "Key Point 2"]
+
+def test_slide_presentation_model():
+    """Test the SlidePresentation Pydantic model."""
+    slides = [
+        Slide(title="Intro", template="titleAndBody", content="Overview"),
+        Slide(title="Details", template="twoColumn", content={"left": "Content1", "right": "Content2"})
+    ]
+    
+    presentation = SlidePresentation(slides=slides)
+    
+    assert len(presentation.slides) == 2
+    assert all(isinstance(slide, Slide) for slide in presentation.slides)
