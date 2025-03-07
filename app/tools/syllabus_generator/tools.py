@@ -1,10 +1,12 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict
+from typing import List, Union, Annotated
+import re
+import json
 from app.services.logger import setup_logger
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_google_genai import GoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
-from langchain_core.runnables import RunnableParallel  # (still used for the parallel branch)
+from langchain_core.runnables import RunnableParallel, RunnableLambda
 from app.services.schemas import SyllabusGeneratorArgsModel
 from fastapi import HTTPException
 
@@ -41,11 +43,15 @@ class SyllabusRequestArgs:
             "lang": self._lang,
             "summary": self._summary,
         }
-
 class SyllabusGeneratorPipeline:
     def __init__(self, verbose=False):
         self.verbose = verbose
-        self.model = GoogleGenerativeAI(model="gemini-1.5-pro")
+        self.model = GoogleGenerativeAI(model="gemini-1.5-pro", max_retries=3)
+        # self.model = self.model.with_retry(    
+        #     stop_after_attempt=2,
+        #     retry_if_exception_type=(TimeoutError, ConnectionError)
+        # )
+
         self.parsers = {
             "course_information": JsonOutputParser(pydantic_object=CourseInformation),
             "course_description_objectives": JsonOutputParser(pydantic_object=CourseDescriptionObjectives),
@@ -55,7 +61,25 @@ class SyllabusGeneratorPipeline:
             "learning_resources": JsonOutputParser(pydantic_object=LearningResource),
             "course_schedule": JsonOutputParser(pydantic_object=CourseScheduleItem),
         }
-
+    def create_section_fallback(self, section_name: str):
+        def section_fallback(input):
+            error = str(input["error"]) if "error" in input else None
+            logger.error(f"Failed to generate {section_name} section: {error}")
+            return {
+                "status": "failed",
+                "error": error or f"Failed to generate {section_name} section.",
+                "section": section_name,
+                "fallback": True
+            }
+        return [RunnableLambda(section_fallback)]
+    
+    def compile_chain_with_fallback(self, chain, section_name):
+        chain_with_fallback = chain.with_fallbacks(
+            self.create_section_fallback(section_name), 
+            exception_key="error"
+        )
+        return chain_with_fallback
+ 
     # ===== NEW METHOD: compile_sequential() to build a hybrid pipeline =====
     def compile_sequential(self):
         try:
@@ -72,8 +96,9 @@ class SyllabusGeneratorPipeline:
                 input_variables=["grade_level", "subject", "course_description", "lang", "summary"],
                 partial_variables={"format_instructions": self.parsers["course_information"].get_format_instructions()},
             )
-            self.chain_course_information = course_info_prompt | self.model | self.parsers["course_information"]
-
+            chain_course_information = course_info_prompt | self.model | self.parsers["course_information"]
+            self.chain_course_information = self.compile_chain_with_fallback(chain_course_information, "course_information")
+            
             # --- Chain for course_description_objectives (sequential step 1 parallel branch) ---
             course_desc_obj_prompt = PromptTemplate(
                 template=(
@@ -85,8 +110,8 @@ class SyllabusGeneratorPipeline:
                 input_variables=["objectives", "lang", "summary"],
                 partial_variables={"format_instructions": self.parsers["course_description_objectives"].get_format_instructions()},
             )
-            self.chain_course_description_objectives = course_desc_obj_prompt | self.model | self.parsers["course_description_objectives"]
-
+            chain_course_description_objectives = course_desc_obj_prompt | self.model | self.parsers["course_description_objectives"]
+            self.chain_course_description_objectives = self.compile_chain_with_fallback(chain_course_description_objectives, "course_description_objectives")
             # --- Chain for course_content (sequential step 2, uses output from course_information) ---
             course_content_prompt = PromptTemplate(
                 template=(
@@ -99,7 +124,8 @@ class SyllabusGeneratorPipeline:
                 input_variables=["course_information", "course_outline", "lang", "summary"],
                 partial_variables={"format_instructions": self.parsers["course_content"].get_format_instructions()},
             )
-            self.chain_course_content = course_content_prompt | self.model | self.parsers["course_content"]
+            chain_course_content = course_content_prompt | self.model | self.parsers["course_content"]
+            self.chain_course_content = self.compile_chain_with_fallback(chain_course_content, "course_content")
 
             # --- Chain for policies_procedures (sequential step 3) ---
             policies_prompt = PromptTemplate(
@@ -113,7 +139,8 @@ class SyllabusGeneratorPipeline:
                 input_variables=["grading_policy", "policies_expectations", "lang", "summary"],
                 partial_variables={"format_instructions": self.parsers["policies_procedures"].get_format_instructions()},
             )
-            self.chain_policies_procedures = policies_prompt | self.model | self.parsers["policies_procedures"]
+            chain_policies_procedures = policies_prompt | self.model | self.parsers["policies_procedures"]
+            self.chain_policies_procedures = self.compile_chain_with_fallback(chain_policies_procedures, "policies_procedures")
 
             # --- Parallel chains for assessment, learning resources, course schedule ---
             assessment_prompt = PromptTemplate(
@@ -126,7 +153,8 @@ class SyllabusGeneratorPipeline:
                 input_variables=["grading_policy", "lang", "summary"],
                 partial_variables={"format_instructions": self.parsers["assessment_grading_criteria"].get_format_instructions()},
             )
-            self.chain_assessment_grading_criteria = assessment_prompt | self.model | self.parsers["assessment_grading_criteria"]
+            chain_assessment_grading_criteria = assessment_prompt | self.model | self.parsers["assessment_grading_criteria"]
+            self.chain_assessment_grading_criteria = self.compile_chain_with_fallback(chain_assessment_grading_criteria, "assessment_grading_criteria")
 
             learning_resources_prompt = PromptTemplate(
                 template=(
@@ -138,19 +166,22 @@ class SyllabusGeneratorPipeline:
                 input_variables=["required_materials", "lang", "summary"],
                 partial_variables={"format_instructions": self.parsers["learning_resources"].get_format_instructions()},
             )
-            self.chain_learning_resources = learning_resources_prompt | self.model | self.parsers["learning_resources"]
+            chain_learning_resources = learning_resources_prompt | self.model | self.parsers["learning_resources"]
+            self.chain_learning_resources = self.compile_chain_with_fallback(chain_learning_resources, "learning_resources")
 
             course_schedule_prompt = PromptTemplate(
                 template=(
                     "Construct a detailed course schedule in {lang}:\n\n"
+                    "Grade Level: {grade_level}\n"
                     "Course Outline: {course_outline}\n"
-                    "Summary: {summary}\n\n"
+                    "Course content: {course_resumed_content}\n\n"
                     "Ensure the schedule includes dates, activities, and key topics.\n{format_instructions}"
                 ),
                 input_variables=["course_outline", "lang", "summary"],
                 partial_variables={"format_instructions": self.parsers["course_schedule"].get_format_instructions()},
             )
-            self.chain_course_schedule = course_schedule_prompt | self.model | self.parsers["course_schedule"]
+            chain_course_schedule = course_schedule_prompt | self.model | self.parsers["course_schedule"]
+            self.chain_course_schedule = self.compile_chain_with_fallback(chain_course_schedule, "course_schedule")
 
             # Build a parallel pipeline for the chains that can be executed concurrently
             self.parallel_pipeline = RunnableParallel(branches={
@@ -163,8 +194,7 @@ class SyllabusGeneratorPipeline:
                 logger.info("Successfully compiled the hybrid sequential and parallel pipeline.")
 
         except Exception as e:
-            logger.error(f"Failed to compile LLM pipeline: {e}")
-            raise HTTPException(status_code=500, detail="Failed to compile LLM pipeline.")
+            raise CompilePipelineError(e)
 
     # ===== END NEW METHOD =====
 
@@ -180,22 +210,45 @@ def generate_syllabus(request_args: SyllabusRequestArgs, verbose=True):
         request_dict = request_args.to_dict()
         with ls.trace("Syllabus Pipeline", "chain", project_name="syllabus_generator", inputs=request_dict) as rt:
             # --- Step 1: Generate course_information ---
+            logger.info("Generating course information...") if verbose else None
             course_information = pipeline.chain_course_information.invoke(request_dict, {"run_name": "CourseInformation"})
             # Inject the output into the request for chained prompts
             request_dict["course_information"] = course_information
 
             # --- Step 2: Generate course_description_objectives ---
+            logger.info("Generating course description and objectives...") if verbose else None
             course_description_objectives = pipeline.chain_course_description_objectives.invoke(request_dict, {"run_name": "DescriptionObjectives"})
 
+            request_dict["course_objectives"] = course_description_objectives["objectives"]
             # --- Step 3: Generate course_content using the chained course_information ---
+            logger.info("Generating course content...") if verbose else None
             course_content = pipeline.chain_course_content.invoke(request_dict, {"run_name": "CourseContent"})
 
+            course_length = {}
+            course_topics = ""
+            for content_item in course_content:
+                unit_time = content_item["unit_time"]
+                unit_time_value = content_item["unit_time_value"]
+                if unit_time in course_length:
+                    course_length[unit_time] += 1
+                else:
+                    course_length[unit_time] = 1
+                course_topics += f"{unit_time_value} {unit_time}: {content_item['topic']}\n"
+            resumed_content = {
+                "course_length": "".join([f"{v} {k}, " for k, v in course_length.items()])[:-2],
+                "course_topics": course_topics
+            }
+            logger.info(f"Resumed course content: {resumed_content}") if verbose else None
+            request_dict["course_resumed_content"] = resumed_content
             # --- Step 4: Generate policies_procedures ---
+            logger.info("Generating policies and procedures...") if verbose else None
             policies_procedures = pipeline.chain_policies_procedures.invoke(request_dict, {"run_name": "PoliciesProcedures"})
 
             # --- Step 5: Generate parallel outputs for assessment, learning resources, course schedule ---
+            logger.info("Generating assessment, learning resources, and course schedule...") if verbose else None
             parallel_outputs = pipeline.parallel_pipeline.invoke(request_dict, {"run_name": "ParallelBranches"})
 
+            logger.info("All sections generated successfully.") if verbose else None
             model = SyllabusSchema(
                 course_information=course_information,
                 course_description_objectives=course_description_objectives,
@@ -205,15 +258,30 @@ def generate_syllabus(request_args: SyllabusRequestArgs, verbose=True):
                 learning_resources=parallel_outputs["branches"]["learning_resources"],
                 course_schedule=parallel_outputs["branches"]["course_schedule"],
             )
+            logger.info("Syllabus generated successfully.")
+
+            model = model.dict()
+            validate_output(model)
 
             rt.end(outputs={"output": model})
-            return dict(model)
-
+            return model
+    except CompilePipelineError as e:
+        logger.error(f"Failed to compile pipeline: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate syllabus from LLM")
     except Exception as e:
         logger.error(f"Failed to generate syllabus: {e}")
         raise HTTPException(status_code=500, detail="Failed to generate syllabus from LLM.")
  
-
+def validate_output(output: dict):
+    """Post-processing validation"""
+    error_sections = [
+        k for k,v in output.items() 
+        if isinstance(v, dict) and v.get("error")
+    ]
+    if error_sections:
+        logger.warning(f"Partial failure in sections: {error_sections}")
+        
+    return output
 
 # ------------------ Existing Schema Definitions (unchanged) ------------------
 class CourseInformation(BaseModel):
@@ -255,11 +323,21 @@ class CourseScheduleItem(BaseModel):
     topic: str = Field(description="The topic for the learning resource")
     activity_desc: str = Field(description="The descrition of the activity for the learning resource")
 
+class FallbackResponse(BaseModel):
+    status: str = Field(description="The status of the response")
+    error: str = Field(description="The error message")
+    section: str = Field(description="The section of the response")
+    fallback: bool = Field(description="The fallback status")
 class SyllabusSchema(BaseModel):
-    course_information: CourseInformation = Field(description="The course information")
-    course_description_objectives: CourseDescriptionObjectives = Field(description="The objectives of the course")
-    course_content: List[CourseContentItem] = Field(description="The content of the course")
-    policies_procedures: PoliciesProcedures = Field(description="The policies procedures of the course")
-    assessment_grading_criteria: AssessmentGradingCriteria = Field(description="The asssessment grading criteria of the course")
-    learning_resources: List[LearningResource] = Field(description="The learning resources of the course")
-    course_schedule: List[CourseScheduleItem] = Field(description="The course schedule")
+    course_information: Union[CourseInformation, FallbackResponse] = Field(description="The course information")
+    course_description_objectives: Union[CourseDescriptionObjectives, FallbackResponse] = Field(description="The objectives of the course")
+    course_content: Union[List[CourseContentItem], FallbackResponse] = Field(description="The content of the course")
+    policies_procedures: Union[PoliciesProcedures, FallbackResponse] = Field(description="The policies procedures of the course")
+    assessment_grading_criteria: Union[AssessmentGradingCriteria, FallbackResponse] = Field(description="The asssessment grading criteria of the course")
+    learning_resources: Union[List[LearningResource], FallbackResponse] = Field(description="The learning resources of the course")
+    course_schedule: Union[List[CourseScheduleItem], FallbackResponse] = Field(description="The course schedule")
+
+class InternalError(Exception):
+    pass
+class CompilePipelineError(InternalError):
+    pass
