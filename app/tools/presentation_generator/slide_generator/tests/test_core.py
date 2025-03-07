@@ -30,7 +30,7 @@ def mock_args():
 
 
 @pytest.fixture
-def mock_slide_generator(mocker):
+def mock_slide_generator():
     """Mock SlideGenerator instead of instantiating it."""
     with patch("app.tools.presentation_generator.slide_generator.tools.GoogleGenerativeAI"), \
          patch("app.tools.presentation_generator.slide_generator.tools.GoogleGenerativeAIEmbeddings"), \
