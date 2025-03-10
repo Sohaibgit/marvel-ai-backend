@@ -1,7 +1,6 @@
-from pydantic import BaseModel, Field
-from typing import List, Union, Annotated
 import re
 import json
+from typing import Dict
 from app.services.logger import setup_logger
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_google_genai import GoogleGenerativeAI
@@ -9,9 +8,13 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnableParallel, RunnableLambda
 from app.services.schemas import SyllabusGeneratorArgsModel
 from fastapi import HTTPException
-
 import langsmith as ls
-from langsmith.run_trees import RunTree
+
+from app.tools.syllabus_generator.schemas import (
+    CourseInformation, CourseDescriptionObjectives, CourseContentItem,
+    PoliciesProcedures, AssessmentGradingCriteria, LearningResource,
+    CourseScheduleItem, SyllabusSchema
+)
 
 logger = setup_logger(__name__)
 
@@ -43,16 +46,108 @@ class SyllabusRequestArgs:
             "lang": self._lang,
             "summary": self._summary,
         }
-class SyllabusGeneratorPipeline:
-    def __init__(self, verbose=False):
-        self.verbose = verbose
-        self.model = GoogleGenerativeAI(model="gemini-1.5-pro", max_retries=3)
-        # self.model = self.model.with_retry(    
-        #     stop_after_attempt=2,
-        #     retry_if_exception_type=(TimeoutError, ConnectionError)
-        # )
+    
+class PromptFactory:
+    @staticmethod
+    def course_information(parser_intructions: str):
+        return PromptTemplate(
+            template=(
+                "Generate a detailed and structured course information in {lang} based on:\n\n"
+                "Grade Level: {grade_level}\n"
+                "Subject: {subject}\n"
+                "Course Description: {course_description}\n"
+                "Summary: {summary}\n\n"
+                "Ensure the response is professional and comprehensive.\n{format_instructions}"
+            ),
+            input_variables=["grade_level", "subject", "course_description", "lang", "summary"],
+            partial_variables={"format_instructions": parser_intructions},
+        )
 
-        self.parsers = {
+    @staticmethod
+    def course_description_objectives(parser_intructions: str):
+        return PromptTemplate(
+            template=(
+                "Develop detailed course objectives and intended learning outcomes in {lang}:\n\n"
+                "Objectives: {objectives}\n"
+                "Summary: {summary}\n\n"
+                "Provide measurable goals and realistic expectations for students.\n{format_instructions}"
+            ),
+            input_variables=["objectives", "lang", "summary"],
+            partial_variables={"format_instructions": parser_intructions},
+        )
+    @staticmethod
+    def course_content(parser_intructions: str):
+        return PromptTemplate(
+            template=(
+                "Using the following course information, generate a detailed course content outline in {lang}:\n\n"
+                "Course Information: {course_information}\n"
+                "Course Outline: {course_outline}\n"
+                "Summary: {summary}\n\n"
+                "Include topics, time frames, and key learning points.\n{format_instructions}"
+            ),
+            input_variables=["course_information", "course_outline", "lang", "summary"],
+            partial_variables={"format_instructions": parser_intructions},
+        )
+    
+    @staticmethod
+    def policies_procedures(parser_intructions: str):
+        return PromptTemplate(
+            template=(
+                "Draft clear and professional course policies and procedures in {lang}:\n\n"
+                "Grading Policy: {grading_policy}\n"
+                "Class Policies and Expectations: {policies_expectations}\n"
+                "Summary: {summary}\n\n"
+                "Ensure all rules and expectations are outlined clearly.\n{format_instructions}"
+            ),
+            input_variables=["grading_policy", "policies_expectations", "lang", "summary"],
+            partial_variables={"format_instructions": parser_intructions},
+        )
+    
+    @staticmethod
+    def assessment_grading_criteria(parser_intructions: str):
+        return PromptTemplate(
+            template=(
+                "Define assessment methods and grading criteria in {lang}:\n\n"
+                "Grading Policy: {grading_policy}\n"
+                "Summary: {summary}\n\n"
+                "Ensure that assessment methods and the grading scale are precise and easy to understand.\n{format_instructions}"
+            ),
+            input_variables=["grading_policy", "lang", "summary"],
+            partial_variables={"format_instructions": parser_intructions},
+        )
+    
+    @staticmethod
+    def learning_resources(parser_intructions: str):
+        return PromptTemplate(
+            template=(
+                "Generate a comprehensive list of recommended learning resources in {lang}:\n\n"
+                "Required Materials: {required_materials}\n"
+                "Summary: {summary}\n\n"
+                "Include titles, authors, and publication years of the materials.\n{format_instructions}"
+            ),
+            input_variables=["required_materials", "lang", "summary"],
+            partial_variables={"format_instructions": parser_intructions},
+        )
+    
+    @staticmethod
+    def course_schedule(parser_intructions: str):
+        return PromptTemplate(
+            template=(
+                "Construct a detailed course schedule in {lang}:\n\n"
+                "Grade Level: {grade_level}\n"
+                "Course Outline: {course_outline}\n"
+                "Course content: {course_resumed_content}\n\n"
+                "Ensure the schedule includes dates, activities, and key topics.\n{format_instructions}"
+            ),
+            input_variables=["course_outline", "lang", "summary"],
+            partial_variables={"format_instructions": parser_intructions},
+        )
+
+class ParserFactory:
+    @staticmethod
+    def create_parsers() -> Dict[str, JsonOutputParser]:
+        
+        return {
             "course_information": JsonOutputParser(pydantic_object=CourseInformation),
             "course_description_objectives": JsonOutputParser(pydantic_object=CourseDescriptionObjectives),
             "course_content": JsonOutputParser(pydantic_object=CourseContentItem),
@@ -61,7 +156,13 @@ class SyllabusGeneratorPipeline:
             "learning_resources": JsonOutputParser(pydantic_object=LearningResource),
             "course_schedule": JsonOutputParser(pydantic_object=CourseScheduleItem),
         }
-    def create_section_fallback(self, section_name: str):
+
+class ChainBuilder:
+    def __init__(self, model, parsers):
+        self.model = model
+        self.parsers = parsers
+    
+    def create_fallback(self, section_name: str):
         def section_fallback(input):
             error = str(input["error"]) if "error" in input else None
             logger.error(f"Failed to generate {section_name} section: {error}")
@@ -73,271 +174,227 @@ class SyllabusGeneratorPipeline:
             }
         return [RunnableLambda(section_fallback)]
     
-    def compile_chain_with_fallback(self, chain, section_name):
+    def build_chain_with_fallback(self, prompt, section_name, parser_key):
+        parser = self.parsers[parser_key]
+        chain = prompt | self.model | parser
         chain_with_fallback = chain.with_fallbacks(
-            self.create_section_fallback(section_name), 
+            self.create_fallback(section_name), 
             exception_key="error"
         )
-        return chain_with_fallback
+        return chain_with_fallback.with_config(run_name=section_name)
+class SyllabusGeneratorPipeline:
+    def __init__(self, model_name="gemini-1.5-pro", model_max_retries=3, verbose=False):
+        self.verbose = verbose
+        self.model = GoogleGenerativeAI(model=model_name, max_retries=model_max_retries)
  
     # ===== NEW METHOD: compile_sequential() to build a hybrid pipeline =====
     def compile_sequential(self):
         try:
-            # --- Chain for course_information (sequential step 1) ---
-            course_info_prompt = PromptTemplate(
-                template=(
-                    "Generate a detailed and structured course information in {lang} based on:\n\n"
-                    "Grade Level: {grade_level}\n"
-                    "Subject: {subject}\n"
-                    "Course Description: {course_description}\n"
-                    "Summary: {summary}\n\n"
-                    "Ensure the response is professional and comprehensive.\n{format_instructions}"
-                ),
-                input_variables=["grade_level", "subject", "course_description", "lang", "summary"],
-                partial_variables={"format_instructions": self.parsers["course_information"].get_format_instructions()},
-            )
-            chain_course_information = course_info_prompt | self.model | self.parsers["course_information"]
-            self.chain_course_information = self.compile_chain_with_fallback(chain_course_information, "course_information")
-            
-            # --- Chain for course_description_objectives (sequential step 1 parallel branch) ---
-            course_desc_obj_prompt = PromptTemplate(
-                template=(
-                    "Develop detailed course objectives and intended learning outcomes in {lang}:\n\n"
-                    "Objectives: {objectives}\n"
-                    "Summary: {summary}\n\n"
-                    "Provide measurable goals and realistic expectations for students.\n{format_instructions}"
-                ),
-                input_variables=["objectives", "lang", "summary"],
-                partial_variables={"format_instructions": self.parsers["course_description_objectives"].get_format_instructions()},
-            )
-            chain_course_description_objectives = course_desc_obj_prompt | self.model | self.parsers["course_description_objectives"]
-            self.chain_course_description_objectives = self.compile_chain_with_fallback(chain_course_description_objectives, "course_description_objectives")
-            # --- Chain for course_content (sequential step 2, uses output from course_information) ---
-            course_content_prompt = PromptTemplate(
-                template=(
-                    "Using the following course information, generate a detailed course content outline in {lang}:\n\n"
-                    "Course Information: {course_information}\n"
-                    "Course Outline: {course_outline}\n"
-                    "Summary: {summary}\n\n"
-                    "Include topics, time frames, and key learning points.\n{format_instructions}"
-                ),
-                input_variables=["course_information", "course_outline", "lang", "summary"],
-                partial_variables={"format_instructions": self.parsers["course_content"].get_format_instructions()},
-            )
-            chain_course_content = course_content_prompt | self.model | self.parsers["course_content"]
-            self.chain_course_content = self.compile_chain_with_fallback(chain_course_content, "course_content")
+            parsers = ParserFactory.create_parsers()
+            chain_builder = ChainBuilder(self.model, parsers)
 
-            # --- Chain for policies_procedures (sequential step 3) ---
-            policies_prompt = PromptTemplate(
-                template=(
-                    "Draft clear and professional course policies and procedures in {lang}:\n\n"
-                    "Grading Policy: {grading_policy}\n"
-                    "Class Policies and Expectations: {policies_expectations}\n"
-                    "Summary: {summary}\n\n"
-                    "Ensure all rules and expectations are outlined clearly.\n{format_instructions}"
+            chains = {}
+            chains["course_information"] = chain_builder.build_chain_with_fallback(
+                PromptFactory.course_information(
+                    parsers["course_information"].get_format_instructions()
                 ),
-                input_variables=["grading_policy", "policies_expectations", "lang", "summary"],
-                partial_variables={"format_instructions": self.parsers["policies_procedures"].get_format_instructions()},
+                "CourseInformation",
+                "course_information"
             )
-            chain_policies_procedures = policies_prompt | self.model | self.parsers["policies_procedures"]
-            self.chain_policies_procedures = self.compile_chain_with_fallback(chain_policies_procedures, "policies_procedures")
-
-            # --- Parallel chains for assessment, learning resources, course schedule ---
-            assessment_prompt = PromptTemplate(
-                template=(
-                    "Define assessment methods and grading criteria in {lang}:\n\n"
-                    "Grading Policy: {grading_policy}\n"
-                    "Summary: {summary}\n\n"
-                    "Ensure that assessment methods and the grading scale are precise and easy to understand.\n{format_instructions}"
+            chains["course_description_objectives"] = chain_builder.build_chain_with_fallback(
+                PromptFactory.course_description_objectives(
+                    parsers["course_description_objectives"].get_format_instructions()
                 ),
-                input_variables=["grading_policy", "lang", "summary"],
-                partial_variables={"format_instructions": self.parsers["assessment_grading_criteria"].get_format_instructions()},
+                "DescriptionObjectives",
+                "course_description_objectives"
             )
-            chain_assessment_grading_criteria = assessment_prompt | self.model | self.parsers["assessment_grading_criteria"]
-            self.chain_assessment_grading_criteria = self.compile_chain_with_fallback(chain_assessment_grading_criteria, "assessment_grading_criteria")
-
-            learning_resources_prompt = PromptTemplate(
-                template=(
-                    "Generate a comprehensive list of recommended learning resources in {lang}:\n\n"
-                    "Required Materials: {required_materials}\n"
-                    "Summary: {summary}\n\n"
-                    "Include titles, authors, and publication years of the materials.\n{format_instructions}"
+            chains["course_content"] = chain_builder.build_chain_with_fallback(
+                PromptFactory.course_content(
+                    parsers["course_content"].get_format_instructions()
                 ),
-                input_variables=["required_materials", "lang", "summary"],
-                partial_variables={"format_instructions": self.parsers["learning_resources"].get_format_instructions()},
+                "CourseContent",
+                "course_content"
             )
-            chain_learning_resources = learning_resources_prompt | self.model | self.parsers["learning_resources"]
-            self.chain_learning_resources = self.compile_chain_with_fallback(chain_learning_resources, "learning_resources")
-
-            course_schedule_prompt = PromptTemplate(
-                template=(
-                    "Construct a detailed course schedule in {lang}:\n\n"
-                    "Grade Level: {grade_level}\n"
-                    "Course Outline: {course_outline}\n"
-                    "Course content: {course_resumed_content}\n\n"
-                    "Ensure the schedule includes dates, activities, and key topics.\n{format_instructions}"
+            chains["policies_procedures"] = chain_builder.build_chain_with_fallback(
+                PromptFactory.policies_procedures(
+                    parsers["policies_procedures"].get_format_instructions()
                 ),
-                input_variables=["course_outline", "lang", "summary"],
-                partial_variables={"format_instructions": self.parsers["course_schedule"].get_format_instructions()},
+                "PoliciesProcedures",
+                "policies_procedures"
             )
-            chain_course_schedule = course_schedule_prompt | self.model | self.parsers["course_schedule"]
-            self.chain_course_schedule = self.compile_chain_with_fallback(chain_course_schedule, "course_schedule")
+            chains["assessment_grading_criteria"] = chain_builder.build_chain_with_fallback(
+                PromptFactory.assessment_grading_criteria(
+                    parsers["assessment_grading_criteria"].get_format_instructions()
+                ),
+                "AssessmentGradingCriteria",
+                "assessment_grading_criteria"
+            )   
+            chains["learning_resources"] = chain_builder.build_chain_with_fallback(
+                PromptFactory.learning_resources(
+                    parsers["learning_resources"].get_format_instructions()
+                ),
+                "LearningResources",
+                "learning_resources"
+            )
+            chains["course_schedule"] = chain_builder.build_chain_with_fallback(
+                PromptFactory.course_schedule(
+                    parsers["course_schedule"].get_format_instructions()
+                ),
+                "CourseSchedule",
+                "course_schedule"
+            )  
 
             # Build a parallel pipeline for the chains that can be executed concurrently
-            self.parallel_pipeline = RunnableParallel(branches={
-                "assessment_grading_criteria": self.chain_assessment_grading_criteria.with_config(run_name="AssessmentGradingCriteria"),
-                "learning_resources": self.chain_learning_resources.with_config(run_name="LearningResources"),
-                "course_schedule": self.chain_course_schedule.with_config(run_name="CourseSchedule"),
-            })
+            parallel_pipeline = RunnableParallel(
+                branches={
+                    "assessment_grading_criteria": chains["assessment_grading_criteria"],
+                    "learning_resources": chains["learning_resources"],
+                    "course_schedule": chains["course_schedule"],
+                }
+            )
 
             if self.verbose:
                 logger.info("Successfully compiled the hybrid sequential and parallel pipeline.")
 
+            return {
+                "sequential": {
+                    "course_information": chains["course_information"],
+                    "course_description_objectives": chains["course_description_objectives"],
+                    "course_content": chains["course_content"],
+                    "policies_procedures": chains["policies_procedures"],
+                },
+                "parallel": parallel_pipeline
+            }    
+
         except Exception as e:
-            raise CompilePipelineError(e)
+            logger.error(f"Failed to compile pipeline: {e}")
+            raise CompilePipelineError(str(e))
 
-    # ===== END NEW METHOD =====
+class SyllabusGenerator:
+    def __init__(self , error_threshold=0.8, verbose=False):
+        self.verbose = verbose
+        self.error_threshold = error_threshold
 
-# ===== Updated generate_syllabus() to use the new hybrid pipeline =====
-def generate_syllabus(request_args: SyllabusRequestArgs, verbose=True):
-    try:
+    def generate_syllabus(self, request_args: SyllabusRequestArgs, verbose=True):
+        try:
+            pipeline_factory =  SyllabusGeneratorPipeline(verbose=self.verbose)
+            # Compile the new hybrid pipeline (sequential + parallel)
+            pipeline = pipeline_factory.compile_sequential()
         
-        pipeline = SyllabusGeneratorPipeline(verbose=verbose)
-        # Compile the new hybrid pipeline (sequential + parallel)
-        pipeline.compile_sequential()
+            # Convert request args to dictionary
+            request_dict = request_args.to_dict()
 
-        # Convert request args to dictionary
-        request_dict = request_args.to_dict()
-        with ls.trace("Syllabus Pipeline", "chain", project_name="syllabus_generator", inputs=request_dict) as rt:
-            # --- Step 1: Generate course_information ---
-            logger.info("Generating course information...") if verbose else None
-            course_information = pipeline.chain_course_information.invoke(request_dict, {"run_name": "CourseInformation"})
-            # Inject the output into the request for chained prompts
-            request_dict["course_information"] = course_information
+            with ls.trace("Syllabus Pipeline", "chain", project_name="syllabus_generator", inputs=request_dict) as rt:
+                # --- Step 1: Generate course_information ---
+                logger.info("Generating course information...") if verbose else None
+                course_information = pipeline["sequential"]["course_information"].invoke(request_dict)
+                # Inject the output into the request for chained prompts
+                request_dict["course_information"] = course_information
 
-            # --- Step 2: Generate course_description_objectives ---
-            logger.info("Generating course description and objectives...") if verbose else None
-            course_description_objectives = pipeline.chain_course_description_objectives.invoke(request_dict, {"run_name": "DescriptionObjectives"})
-
-            request_dict["course_objectives"] = course_description_objectives["objectives"]
-            # --- Step 3: Generate course_content using the chained course_information ---
-            logger.info("Generating course content...") if verbose else None
-            course_content = pipeline.chain_course_content.invoke(request_dict, {"run_name": "CourseContent"})
-
-            course_length = {}
-            course_topics = ""
-            for content_item in course_content:
-                unit_time = content_item["unit_time"]
-                unit_time_value = content_item["unit_time_value"]
-                if unit_time in course_length:
-                    course_length[unit_time] += 1
+                # --- Step 2: Generate course_description_objectives ---
+                logger.info("Generating course description and objectives...") if verbose else None
+                course_description_objectives = pipeline["sequential"]["course_description_objectives"].invoke(request_dict)
+                 
+                if "objectives" in course_description_objectives:
+                    request_dict["course_objectives"] = course_description_objectives["objectives"] 
                 else:
-                    course_length[unit_time] = 1
-                course_topics += f"{unit_time_value} {unit_time}: {content_item['topic']}\n"
-            resumed_content = {
-                "course_length": "".join([f"{v} {k}, " for k, v in course_length.items()])[:-2],
-                "course_topics": course_topics
-            }
-            logger.info(f"Resumed course content: {resumed_content}") if verbose else None
-            request_dict["course_resumed_content"] = resumed_content
-            # --- Step 4: Generate policies_procedures ---
-            logger.info("Generating policies and procedures...") if verbose else None
-            policies_procedures = pipeline.chain_policies_procedures.invoke(request_dict, {"run_name": "PoliciesProcedures"})
+                    request_dict["course_objectives"] = request_dict["objectives"]
 
-            # --- Step 5: Generate parallel outputs for assessment, learning resources, course schedule ---
-            logger.info("Generating assessment, learning resources, and course schedule...") if verbose else None
-            parallel_outputs = pipeline.parallel_pipeline.invoke(request_dict, {"run_name": "ParallelBranches"})
+                # --- Step 3: Generate course_content using the chained course_information ---
+                logger.info("Generating course content...") if verbose else None
+                course_content = pipeline["sequential"]["course_content"].invoke(request_dict)
 
-            logger.info("All sections generated successfully.") if verbose else None
-            model = SyllabusSchema(
-                course_information=course_information,
-                course_description_objectives=course_description_objectives,
-                course_content=course_content,
-                policies_procedures=policies_procedures,
-                assessment_grading_criteria=parallel_outputs["branches"]["assessment_grading_criteria"],
-                learning_resources=parallel_outputs["branches"]["learning_resources"],
-                course_schedule=parallel_outputs["branches"]["course_schedule"],
-            )
-            logger.info("Syllabus generated successfully.")
+                if course_description_objectives.get("status") != "failed":
+                    # Resuming course content
+                    course_length = {}
+                    course_topics = ""
+                    for content_item in course_content:
+                        unit_time = content_item["unit_time"]
+                        unit_time_value = content_item["unit_time_value"]
+                        if unit_time in course_length:
+                            course_length[unit_time] += 1
+                        else:
+                            course_length[unit_time] = 1
+                        course_topics += f"{unit_time_value} {unit_time}: {content_item['topic']}\n"
 
-            model = model.dict()
-            validate_output(model)
+                    if course_topics and course_length:
+                        request_dict["course_resumed_content"] = {
+                            "course_length": "".join([f"{v} {k}, " for k, v in course_length.items()])[:-2],
+                            "course_topics": course_topics
+                        }
+                else:
+                    request_dict["course_resumed_content"] = ""
 
-            rt.end(outputs={"output": model})
-            return model
-    except CompilePipelineError as e:
-        logger.error(f"Failed to compile pipeline: {e}")
-        raise HTTPException(status_code=500, detail="Failed to generate syllabus from LLM")
-    except Exception as e:
-        logger.error(f"Failed to generate syllabus: {e}")
-        raise HTTPException(status_code=500, detail="Failed to generate syllabus from LLM.")
+                # --- Step 4: Generate policies_procedures ---
+                logger.info("Generating policies and procedures...") if verbose else None
+                policies_procedures = pipeline["sequential"]["policies_procedures"].invoke(request_dict)
+
+                # --- Step 5: Generate parallel outputs for assessment, learning resources, course schedule ---
+                logger.info("Generating assessment, learning resources, and course schedule...") if verbose else None
+                parallel_outputs = pipeline["parallel"].invoke(request_dict)
+
+                model = SyllabusSchema(
+                    course_information=course_information,
+                    course_description_objectives=course_description_objectives,
+                    course_content=course_content,
+                    policies_procedures=policies_procedures,
+                    assessment_grading_criteria=parallel_outputs["branches"]["assessment_grading_criteria"],
+                    learning_resources=parallel_outputs["branches"]["learning_resources"],
+                    course_schedule=parallel_outputs["branches"]["course_schedule"],
+                )
+                logger.info("Syllabus generated successfully.")
+
+                model = model.dict()
+                metadata = self._validate_output(model)
+
+                rt.end(outputs={"output": model, "metadata": metadata})
+                return model
+            
+        except CompilePipelineError as e:
+            logger.error(f"Failed to compile pipeline: {e}")
+            raise HTTPException(status_code=500, detail="Failed to generate syllabus from LLM")
+        except OutputValidationError as e:
+            logger.error(f"Failed to validate syllabus: {e}")
+            raise HTTPException(status_code=500, detail="Failed to generate syllabus from LLM.")
+        except Exception as e:
+            logger.error(f"Failed to generate syllabus: {e}")
+            raise HTTPException(status_code=500, detail="Failed to generate syllabus from LLM.")
  
-def validate_output(output: dict):
-    """Post-processing validation"""
-    error_sections = [
-        k for k,v in output.items() 
-        if isinstance(v, dict) and v.get("error")
-    ]
-    if error_sections:
-        logger.warning(f"Partial failure in sections: {error_sections}")
+    def _validate_output(self, output: dict):
+        """Post-processing validation"""
+        error_count = 0
+        error_sections = []
+        success_sections = []
+        # error_sections = [
+        #     k for k,v in output.items() 
+        #     if isinstance(v, dict) and v.get("error")
+        # ]
+        for section, result in output.items():
+            if isinstance(result, dict) and result.get("error"):
+                error_sections.append(section)
+                error_count += 1
+            else:
+                success_sections.append(section)
         
-    return output
+        error_rate = round(error_count / len(output), 2)
+        if error_count == len(output):
+            raise OutputValidationError("Failed to generate any section.")
+        
+        if error_rate >= self.error_threshold:
+            raise OutputValidationError("Error rate exceeds threshold.")
+        
+        if error_sections:
+            logger.warning(f"Partial failure in sections: {error_sections}.\n Error rate: {error_rate}")
 
-# ------------------ Existing Schema Definitions (unchanged) ------------------
-class CourseInformation(BaseModel):
-    course_title: str = Field(description="The course title")
-    grade_level: str = Field(description="The grade level")
-    description: str = Field(description="The course description")
-
-class CourseDescriptionObjectives(BaseModel):
-    objectives: List[str] = Field(description="The course objectives")
-    intended_learning_outcomes: List[str] = Field(description="The intended learning outcomes of the course")
-
-class CourseContentItem(BaseModel):
-    unit_time: str = Field(description="The unit of time for the course content")
-    unit_time_value: int = Field(description="The unit of time value for the course content")
-    topic: str = Field(description="The topic per unit of time for the course content")
-
-class PoliciesProcedures(BaseModel):
-    attendance_policy: str = Field(description="The attendance policy of the class")
-    late_submission_policy: str = Field(description="The late submission policy of the class")
-    academic_honesty: str = Field(description="The academic honesty policy of the class")
-
-class AssessmentMethod(BaseModel):
-    type_assessment: str = Field(description="The type of assessment")
-    weight: int = Field(description="The weight of the assessment in the final grade")
-
-class AssessmentGradingCriteria(BaseModel):
-    assessment_methods: List[AssessmentMethod] = Field(description="The assessment methods")
-    grading_scale: dict = Field(description="The grading scale")
-
-class LearningResource(BaseModel):
-    title: str = Field(description="The book title of the learning resource")
-    author: str = Field(description="The book author of the learning resource")
-    year: int = Field(description="The year of creation of the book")
-
-class CourseScheduleItem(BaseModel):
-    unit_time: str = Field(description="The unit of time for the course schedule item")
-    unit_time_value: int = Field(description="The unit of time value for the course schedule item")
-    date: str = Field(description="The date for the course schedule item")
-    topic: str = Field(description="The topic for the learning resource")
-    activity_desc: str = Field(description="The descrition of the activity for the learning resource")
-
-class FallbackResponse(BaseModel):
-    status: str = Field(description="The status of the response")
-    error: str = Field(description="The error message")
-    section: str = Field(description="The section of the response")
-    fallback: bool = Field(description="The fallback status")
-class SyllabusSchema(BaseModel):
-    course_information: Union[CourseInformation, FallbackResponse] = Field(description="The course information")
-    course_description_objectives: Union[CourseDescriptionObjectives, FallbackResponse] = Field(description="The objectives of the course")
-    course_content: Union[List[CourseContentItem], FallbackResponse] = Field(description="The content of the course")
-    policies_procedures: Union[PoliciesProcedures, FallbackResponse] = Field(description="The policies procedures of the course")
-    assessment_grading_criteria: Union[AssessmentGradingCriteria, FallbackResponse] = Field(description="The asssessment grading criteria of the course")
-    learning_resources: Union[List[LearningResource], FallbackResponse] = Field(description="The learning resources of the course")
-    course_schedule: Union[List[CourseScheduleItem], FallbackResponse] = Field(description="The course schedule")
-
+        return {
+            "status": error_rate == 0,
+            "error_rate": error_rate,
+            "error_sections": error_sections,
+            "success_sections": success_sections
+        }
 class InternalError(Exception):
     pass
 class CompilePipelineError(InternalError):
+    pass
+class OutputValidationError(InternalError):
     pass
