@@ -45,6 +45,7 @@ class FallbackResponse(BaseModel):
     error: str = Field(description="The error message")
     section: str = Field(description="The section of the response")
     fallback: bool = Field(description="The fallback status")
+    
 class SyllabusSchema(BaseModel):
     course_information: Union[CourseInformation, FallbackResponse] = Field(description="The course information")
     course_description_objectives: Union[CourseDescriptionObjectives, FallbackResponse] = Field(description="The objectives of the course")

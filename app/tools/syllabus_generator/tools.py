@@ -5,7 +5,7 @@ from app.services.logger import setup_logger
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_google_genai import GoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
-from langchain_core.runnables import RunnableParallel, RunnableLambda
+from langchain_core.runnables import Runnable, RunnableParallel, RunnableLambda
 from app.services.schemas import SyllabusGeneratorArgsModel
 from fastapi import HTTPException
 import langsmith as ls
@@ -19,6 +19,7 @@ from app.tools.syllabus_generator.schemas import (
 logger = setup_logger(__name__)
 
 class SyllabusRequestArgs:
+    """Class to structure the input arguments for generating a syllabus."""
     def __init__(self, syllabus_generator_args: SyllabusGeneratorArgsModel, summary: str):
         self._grade_level = syllabus_generator_args.grade_level
         self._subject = syllabus_generator_args.subject
@@ -33,6 +34,7 @@ class SyllabusRequestArgs:
         self._summary = summary
 
     def to_dict(self) -> dict:
+        """Convert the object to a dictionary."""
         return {
             "grade_level": self._grade_level,
             "subject": self._subject,
@@ -48,8 +50,10 @@ class SyllabusRequestArgs:
         }
     
 class PromptFactory:
+    """Factory class to generate prompts for each section of the syllabus."""
     @staticmethod
-    def course_information(parser_intructions: str):
+    def course_information(parser_intructions: str) -> PromptTemplate:
+        """Generate a detailed and structured course information prompt."""
         return PromptTemplate(
             template=(
                 "Generate a detailed and structured course information in {lang} based on:\n\n"
@@ -64,7 +68,8 @@ class PromptFactory:
         )
 
     @staticmethod
-    def course_description_objectives(parser_intructions: str):
+    def course_description_objectives(parser_intructions: str) -> PromptTemplate:
+        """Generate detailed course objectives and intended learning outcomes prompt."""
         return PromptTemplate(
             template=(
                 "Develop detailed course objectives and intended learning outcomes in {lang}:\n\n"
@@ -76,7 +81,8 @@ class PromptFactory:
             partial_variables={"format_instructions": parser_intructions},
         )
     @staticmethod
-    def course_content(parser_intructions: str):
+    def course_content(parser_intructions: str) -> PromptTemplate:
+        """Generate a detailed course content outline prompt."""
         return PromptTemplate(
             template=(
                 "Using the following course information, generate a detailed course content outline in {lang}:\n\n"
@@ -90,7 +96,8 @@ class PromptFactory:
         )
     
     @staticmethod
-    def policies_procedures(parser_intructions: str):
+    def policies_procedures(parser_intructions: str) -> PromptTemplate:
+        """Generate a prompt for drafting clear and professional course policies and procedures."""
         return PromptTemplate(
             template=(
                 "Draft clear and professional course policies and procedures in {lang}:\n\n"
@@ -104,7 +111,8 @@ class PromptFactory:
         )
     
     @staticmethod
-    def assessment_grading_criteria(parser_intructions: str):
+    def assessment_grading_criteria(parser_intructions: str) -> PromptTemplate:
+        """Generate a prompt for defining assessment methods and grading criteria."""
         return PromptTemplate(
             template=(
                 "Define assessment methods and grading criteria in {lang}:\n\n"
@@ -117,7 +125,8 @@ class PromptFactory:
         )
     
     @staticmethod
-    def learning_resources(parser_intructions: str):
+    def learning_resources(parser_intructions: str) -> PromptTemplate:
+        """Generate a prompt for compiling a comprehensive list of recommended learning resources."""
         return PromptTemplate(
             template=(
                 "Generate a comprehensive list of recommended learning resources in {lang}:\n\n"
@@ -130,7 +139,8 @@ class PromptFactory:
         )
     
     @staticmethod
-    def course_schedule(parser_intructions: str):
+    def course_schedule(parser_intructions: str) -> PromptTemplate:
+        """Generate a prompt for constructing a detailed course schedule."""
         return PromptTemplate(
             template=(
                 "Construct a detailed course schedule in {lang}:\n\n"
@@ -144,6 +154,7 @@ class PromptFactory:
         )
 
 class ParserFactory:
+    """Factory class to create parsers for each section of the syllabus."""
     @staticmethod
     def create_parsers() -> Dict[str, JsonOutputParser]:
         
@@ -158,11 +169,13 @@ class ParserFactory:
         }
 
 class ChainBuilder:
-    def __init__(self, model, parsers):
+    """Class to build a chain of prompts, model, and parsers for a section."""
+    def __init__(self, model, parsers: Dict[str, JsonOutputParser]):
         self.model = model
         self.parsers = parsers
     
-    def create_fallback(self, section_name: str):
+    def create_fallback(self, section_name: str) -> list[RunnableLambda]:
+        """Create a fallback function for a section chain."""
         def section_fallback(input):
             error = str(input["error"]) if "error" in input else None
             logger.error(f"Failed to generate {section_name} section: {error}")
@@ -174,7 +187,8 @@ class ChainBuilder:
             }
         return [RunnableLambda(section_fallback)]
     
-    def build_chain_with_fallback(self, prompt, section_name, parser_key):
+    def build_chain_with_fallback(self, prompt: PromptTemplate, section_name: str, parser_key: str) -> Runnable:
+        """Build a chain with a prompt, model, parser, and fallback."""
         parser = self.parsers[parser_key]
         chain = prompt | self.model | parser
         chain_with_fallback = chain.with_fallbacks(
@@ -183,12 +197,14 @@ class ChainBuilder:
         )
         return chain_with_fallback.with_config(run_name=section_name)
 class SyllabusGeneratorPipeline:
+    """Class to compile a hybrid pipeline for generating syllabuses."""
     def __init__(self, model_name="gemini-1.5-pro", model_max_retries=3, verbose=False):
         self.verbose = verbose
         self.model = GoogleGenerativeAI(model=model_name, max_retries=model_max_retries)
  
     # ===== NEW METHOD: compile_sequential() to build a hybrid pipeline =====
-    def compile_sequential(self):
+    def compile_sequential(self) -> dict:
+        """Compile a hybrid pipeline with sequential and parallel branches."""
         try:
             parsers = ParserFactory.create_parsers()
             chain_builder = ChainBuilder(self.model, parsers)
@@ -271,12 +287,33 @@ class SyllabusGeneratorPipeline:
             raise CompilePipelineError(str(e))
 
 class SyllabusGenerator:
-    def __init__(self , error_threshold=0.8, verbose=False):
+    """
+    Main class responsible for generating complete syllabuses using LLM.
+    
+    Coordinates the pipeline execution, handles errors, and validates the output.
+    Uses configurable error thresholds to determine if enough sections were 
+    successfully generated.
+    """
+    def __init__(self , error_threshold:float=0.8, verbose=False):
         self.verbose = verbose
         self.error_threshold = error_threshold
 
-    def generate_syllabus(self, request_args: SyllabusRequestArgs, verbose=True):
+    def generate_syllabus(self, request_args: SyllabusRequestArgs, verbose=True) -> dict:
+        """
+        Generate a complete syllabus document using the LLM pipeline.
+    
+        Args:
+            request_args: Structured input containing all required syllabus information
+            verbose: Whether to log detailed progress information
+            
+        Returns:
+            dict: Complete syllabus with all sections
+            
+        Raises:
+            HTTPException: If syllabus generation fails or validation fails
+        """
         try:
+            # Create a new pipeline factory
             pipeline_factory =  SyllabusGeneratorPipeline(verbose=self.verbose)
             # Compile the new hybrid pipeline (sequential + parallel)
             pipeline = pipeline_factory.compile_sequential()
@@ -284,6 +321,7 @@ class SyllabusGenerator:
             # Convert request args to dictionary
             request_dict = request_args.to_dict()
 
+            # Start a trace for the pipeline. This will log all steps and errors in one root trace.
             with ls.trace("Syllabus Pipeline", "chain", project_name="syllabus_generator", inputs=request_dict) as rt:
                 # --- Step 1: Generate course_information ---
                 logger.info("Generating course information...") if verbose else None
@@ -298,6 +336,7 @@ class SyllabusGenerator:
                 if "objectives" in course_description_objectives:
                     request_dict["course_objectives"] = course_description_objectives["objectives"] 
                 else:
+                    # Fallback to the original objectives if the parser fails
                     request_dict["course_objectives"] = request_dict["objectives"]
 
                 # --- Step 3: Generate course_content using the chained course_information ---
@@ -305,7 +344,7 @@ class SyllabusGenerator:
                 course_content = pipeline["sequential"]["course_content"].invoke(request_dict)
 
                 if course_description_objectives.get("status") != "failed":
-                    # Resuming course content
+                    # Resuming course content with course length and topics for course_schedule
                     course_length = {}
                     course_topics = ""
                     for content_item in course_content:
@@ -316,13 +355,14 @@ class SyllabusGenerator:
                         else:
                             course_length[unit_time] = 1
                         course_topics += f"{unit_time_value} {unit_time}: {content_item['topic']}\n"
-
+                    # Inject the resumed content into the request for the course_schedule
                     if course_topics and course_length:
                         request_dict["course_resumed_content"] = {
                             "course_length": "".join([f"{v} {k}, " for k, v in course_length.items()])[:-2],
                             "course_topics": course_topics
                         }
                 else:
+                    # Fallback to empty content if the parser fails
                     request_dict["course_resumed_content"] = ""
 
                 # --- Step 4: Generate policies_procedures ---
@@ -345,8 +385,9 @@ class SyllabusGenerator:
                 logger.info("Syllabus generated successfully.")
 
                 model = model.dict()
+                # Validate the output and calculate error rate
                 metadata = self._validate_output(model)
-
+                # End the trace
                 rt.end(outputs={"output": model, "metadata": metadata})
                 return model
             
@@ -360,15 +401,15 @@ class SyllabusGenerator:
             logger.error(f"Failed to generate syllabus: {e}")
             raise HTTPException(status_code=500, detail="Failed to generate syllabus from LLM.")
  
-    def _validate_output(self, output: dict):
-        """Post-processing validation"""
+    def _validate_output(self, output: dict) -> dict:
+        """
+        Post-processing validation
+        Validate the output and calculate error rate. 
+        If the error rate exceeds the threshold, raise an exception.
+        """
         error_count = 0
         error_sections = []
         success_sections = []
-        # error_sections = [
-        #     k for k,v in output.items() 
-        #     if isinstance(v, dict) and v.get("error")
-        # ]
         for section, result in output.items():
             if isinstance(result, dict) and result.get("error"):
                 error_sections.append(section)
@@ -393,8 +434,15 @@ class SyllabusGenerator:
             "success_sections": success_sections
         }
 class InternalError(Exception):
+    """Base class for internal errors."""
     pass
 class CompilePipelineError(InternalError):
+    """Error raised when the pipeline fails to compile."""
     pass
 class OutputValidationError(InternalError):
+    """Error raised when the output fails validation.    
+    
+    This occurs when too many sections fail to generate properly
+    or when the error rate exceeds the configured threshold.
+    """
     pass
