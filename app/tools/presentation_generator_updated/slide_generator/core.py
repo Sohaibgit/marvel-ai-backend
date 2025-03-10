@@ -2,7 +2,7 @@
 from app.api.error_utilities import LoaderError, ToolExecutorError
 from typing import List
 from app.services.schemas import SlideGeneratorInput
-from app.tools.presentation_generator.slide_generator.tools import SlideGenerator
+from app.tools.presentation_generator_updated.slide_generator.tools import SlideGenerator
 from app.services.logger import setup_logger
 logger = setup_logger()
 

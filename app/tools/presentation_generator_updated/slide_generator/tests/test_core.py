@@ -1,7 +1,7 @@
 import pytest
-from app.tools.presentation_generator.slide_generator.core import executor,SlideGeneratorInput
+from app.tools.presentation_generator_updated.slide_generator.core import executor,SlideGeneratorInput
 from unittest.mock import patch, MagicMock, Mock
-from app.tools.presentation_generator.slide_generator.tools import SlideGenerator, Slide,SlidePresentation
+from app.tools.presentation_generator_updated.slide_generator.tools import SlideGenerator, Slide,SlidePresentation
 
 @pytest.fixture
 def mock_slide_data():
@@ -30,7 +30,7 @@ def mock_args():
 
 
 @pytest.fixture
-def mock_slide_generator(mocker):
+def mock_slide_generator():
     """Mock SlideGenerator instead of instantiating it."""
     with patch("app.tools.presentation_generator.slide_generator.tools.GoogleGenerativeAI"), \
          patch("app.tools.presentation_generator.slide_generator.tools.GoogleGenerativeAIEmbeddings"), \
@@ -145,12 +145,12 @@ def test_validate_slides_content_empty_slides(mock_slide_generator):
         mock_slide_generator.validate_slides_content(response, topic)
 
 #Test the compile_with_context function.
-def test_slide_generator_compile_with_context(mock_args,mock_slide_generator):
+def test_slide_generator_compile_context(mock_args,mock_slide_generator):
     """Test compilation of pipeline."""
     args = mock_args
     test_instance = mock_slide_generator
     test_instance.args = args    
-    chain = test_instance.compile_with_context()    
+    chain = test_instance.compile_context()    
     assert chain is not None
 
 

@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from app.tools.presentation_generator.outline_generator.core import executor
-from app.tools.presentation_generator.outline_generator.tools import OutlineGenerator, Outlines
+from app.tools.presentation_generator_updated.outline_generator.core import executor
+from app.tools.presentation_generator_updated.outline_generator.tools import OutlineGenerator, Outlines
 from app.services.schemas import OutlineGeneratorInput
 from app.api.error_utilities import LoaderError, ToolExecutorError
 from langchain_core.documents import Document
@@ -11,8 +11,8 @@ base_attributes = {
     "n_slides": 2,
     "topic": "Introduction to Python Programming",
     "instructional_level": "beginner",
-    "file_upload_url": "",
-    "file_upload_type": "",
+    "file_url": "",
+    "file_type": "",
     "lang": "en"
 }
 
@@ -21,8 +21,8 @@ mock_args = OutlineGeneratorInput(
     n_slides=base_attributes["n_slides"],
     topic=base_attributes["topic"],
     instructional_level=base_attributes["instructional_level"],
-    file_upload_url=base_attributes["file_upload_url"],
-    file_upload_type=base_attributes["file_upload_type"],
+    file_url=base_attributes["file_url"],
+    file_type=base_attributes["file_type"],
     lang=base_attributes["lang"]
 )
 @pytest.fixture
@@ -78,8 +78,8 @@ def test_executor_normal_operation(mock_outline_data):
             n_slides=base_attributes["n_slides"],
             topic=base_attributes["topic"],
             instructional_level=base_attributes["instructional_level"],
-            file_upload_url=base_attributes["file_upload_url"],
-            file_upload_type=base_attributes["file_upload_type"],
+            file_url=base_attributes["file_url"],
+            file_type=base_attributes["file_type"],
             lang=base_attributes["lang"],
             verbose=False
         )
@@ -101,8 +101,8 @@ def test_executor_missing_required_inputs():
                 n_slides=None,
                 topic=None,
                 instructional_level=base_attributes["instructional_level"],
-                file_upload_url=base_attributes["file_upload_url"],
-                file_upload_type=base_attributes["file_upload_type"],
+                file_url=base_attributes["file_url"],
+                file_type=base_attributes["file_type"],
                 lang=base_attributes["lang"],
                 verbose=False
             )
@@ -123,8 +123,8 @@ def test_outline_generator_compile_without_context(mock_outline_generator):
         n_slides=3,
         topic="Machine Learning",
         instructional_level="Advanced",
-        file_upload_url="",
-        file_upload_type="",
+        file_url="",
+        file_type="",
         lang="en"
     )
     

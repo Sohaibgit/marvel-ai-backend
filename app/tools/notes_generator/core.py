@@ -10,8 +10,8 @@ def executor(
     focus: str,
     page_layout: str,
     text_input: str,
-    file_upload_type: str,
-    file_upload_url: str,
+    file_type: str,
+    file_url: str,
     lang: str,
     verbose=True
 ):
@@ -22,8 +22,8 @@ def executor(
         focus (str): The focus or topic of the notes.
         page_layout (str): The structure or template for the notes (e.g., bullet points, paragraphs, tables).
         text_input (str): Direct text input for note generation.
-        file_upload_type (str): Type of the uploaded file (e.g., CSV, PDF, DOCX, PPT, Plain Text).
-        file_upload_url (str): URL of the uploaded file.
+        file_type (str): Type of the uploaded file (e.g., CSV, PDF, DOCX, PPT, Plain Text).
+        file_url (str): URL of the uploaded file.
         lang (str): Language of the input.
         verbose (bool): Flag for verbose logging.
     
@@ -40,24 +40,24 @@ def executor(
             raise ValueError("No page layout provided for note generation.")
         
         # Check if any input is provided for note generation
-        if not any([text_input, file_upload_url,focus,file_upload_type]):
+        if not any([text_input, file_url,focus,file_type]):
             raise ValueError("No input provided for note generation.")        
             
         # Check if url is provided without file type
-        if file_upload_url and not file_upload_type: 
+        if file_url and not file_type: 
             raise ValueError("No file type provided for document loading.") 
         
          # Log file type if provided
-        if file_upload_type:
-            logger.info(f"Generating docs from {file_upload_type} file.")
+        if file_type:
+            logger.info(f"Generating docs from {file_type} file.")
 
         # Load documents if a file URL is provided
         docs = None
         
            
-        if file_upload_url and file_upload_type:
-            logger.info(f"Loading documents from {file_upload_url}.")
-            docs = get_docs(file_upload_url, file_upload_type, True)
+        if file_url and file_type:
+            logger.info(f"Loading documents from {file_url}.")
+            docs = get_docs(file_url, file_type, True)
         
 
         # If user provides text, add it as a Document
@@ -76,8 +76,8 @@ def executor(
             focus=focus,
             page_layout=page_layout,
             text_input=text_input,
-            file_upload_type=file_upload_type,
-            file_upload_url=file_upload_url,
+            file_type=file_type,
+            file_url=file_url,
             lang=lang
         )
     

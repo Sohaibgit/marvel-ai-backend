@@ -12,8 +12,8 @@ base_attributes = {
     "focus": "Summarize the key steps of photosynthesis.",
     "page_layout": "bullet points",
     "text_input": "Photosynthesis is a process used by plants to convert sunlight into energy.",
-    "file_upload_type": "pdf",
-    "file_upload_url": "https://firebasestorage.googleapis.com/v0/b/kai-ai-f63c8.appspot.com/o/uploads%2F510f946e-823f-42d7-b95d-d16925293946-Linear%20Regression%20Stat%20Yale.pdf?alt=media&token=caea86aa-c06b-4cde-9fd0-42962eb72ddd",
+    "file_type": "pdf",
+    "file_url": "https://firebasestorage.googleapis.com/v0/b/kai-ai-f63c8.appspot.com/o/uploads%2F510f946e-823f-42d7-b95d-d16925293946-Linear%20Regression%20Stat%20Yale.pdf?alt=media&token=caea86aa-c06b-4cde-9fd0-42962eb72ddd",
     "lang": "en"
     
 }
@@ -21,8 +21,8 @@ mock_args = NoteGeneratorArgs(
         focus = base_attributes["focus"],
         page_layout = base_attributes["page_layout"],
         text_input = base_attributes["text_input"],
-        file_upload_type = base_attributes["file_upload_type"],
-        file_upload_url = base_attributes["file_upload_url"],
+        file_type = base_attributes["file_type"],
+        file_url = base_attributes["file_url"],
         lang = base_attributes["lang"]
     )
 mock_parser = JsonOutputParser(pydantic_object=BulletPoints)
@@ -35,8 +35,8 @@ def test_executor_normal_operation():
         focus=base_attributes["focus"],
         page_layout=base_attributes["page_layout"],
         text_input=base_attributes["text_input"],
-        file_upload_type=base_attributes["file_upload_type"],
-        file_upload_url=base_attributes["file_upload_url"],
+        file_type=base_attributes["file_type"],
+        file_url=base_attributes["file_url"],
         lang=base_attributes["lang"],
         verbose=False        
     )
@@ -54,8 +54,8 @@ def test_executor_normal_operation():
 #             focus=base_attributes["focus"],
 #             page_layout="",
 #             text_input=base_attributes["text_input"],
-#             file_upload_type=base_attributes["file_upload_type"],
-#             file_upload_url=base_attributes["file_upload_url"],
+#             file_type=base_attributes["file_type"],
+#             file_url=base_attributes["file_url"],
 #             lang=base_attributes["lang"],
 #             verbose=False            
 #         )
@@ -67,8 +67,8 @@ def test_executor_no_input():
             focus="",
             page_layout=base_attributes["page_layout"],
             text_input="",
-            file_upload_type="",
-            file_upload_url="",
+            file_type="",
+            file_url="",
             lang=base_attributes["lang"],
             verbose=False
         )
@@ -80,8 +80,8 @@ def test_executor_no_filetype__error():
             focus=base_attributes["focus"],
             page_layout=base_attributes["page_layout"],
             text_input="",
-            file_upload_type="",
-            file_upload_url=base_attributes["file_upload_url"],
+            file_type="",
+            file_url=base_attributes["file_url"],
             lang=base_attributes["lang"],
             verbose=False
         )
@@ -94,8 +94,8 @@ def test_executor_loader_error():
             focus=base_attributes["focus"],
             page_layout=base_attributes["page_layout"],
             text_input="",
-            file_upload_type="Invalid",
-            file_upload_url="Invalid_url",
+            file_type="Invalid",
+            file_url="Invalid_url",
             lang=base_attributes["lang"],
             verbose=False
         )

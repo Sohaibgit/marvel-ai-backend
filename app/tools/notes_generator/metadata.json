@@ -17,13 +17,13 @@
             "type": "text"
         },
         {
-            "label": "File Upload Type",
-            "name": "file_upload_type",
+            "label": "File  Type",
+            "name": "file_type",
             "type": "text"
         },
         {
-            "label": "File Upload URL",
-            "name": "file_upload_url",
+            "label": "File URL",
+            "name": "file_url",
             "type": "text"
         },
       

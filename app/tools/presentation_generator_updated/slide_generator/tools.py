@@ -93,7 +93,7 @@ class SlideGenerator:
         
         
 
-    def compile_with_context(self):
+    def compile_context(self):
         # Return the chain
         prompt = PromptTemplate(
             template=self.prompt,
@@ -108,8 +108,7 @@ class SlideGenerator:
 
     def generate_slides(self):
         logger.info(f"Creating the Outlines for the Presentation") 
-
-        chain = self.compile_with_context() 
+        chain = self.compile_context() 
 
         input_parameters = {
             "instructional_level": self.args.instructional_level,
