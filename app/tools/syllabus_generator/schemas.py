@@ -1,10 +1,27 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from typing import List, Union
 
 class CourseInformation(BaseModel):
     course_title: str = Field(description="The course title")
     grade_level: str = Field(description="The grade level")
     description: str = Field(description="The course description")
+    @validator('course_title', pre=True)
+    def validate_course_title(cls, v):
+        if not v or v == "Not specified":
+            return "General Course"
+        return v
+        
+    @validator('grade_level', pre=True)
+    def validate_grade_level(cls, v):
+        if not v or v == "Not specified":
+            return "Unspecified Grade Level"
+        return v
+        
+    @validator('description', pre=True)
+    def validate_description(cls, v):
+        if not v or v == "":
+            return "This course provides students with knowledge and skills in the subject area."
+        return v
 
 class CourseDescriptionObjectives(BaseModel):
     objectives: List[str] = Field(description="The course objectives")
@@ -19,11 +36,6 @@ class PoliciesProcedures(BaseModel):
     attendance_policy: str = Field(description="The attendance policy of the class")
     late_submission_policy: str = Field(description="The late submission policy of the class")
     academic_honesty: str = Field(description="The academic honesty policy of the class")
-
-class CourseContentItem(BaseModel):
-    unit_time: str = Field(description="The unit of time for the course content")
-    unit_time_value: int = Field(description="The unit of time value for the course content")
-    topic: str = Field(description="The topic per unit of time for the course content")
 
 class AssessmentMethod(BaseModel):
     type_assessment: str = Field(description="The type of assessment")
@@ -59,3 +71,4 @@ class SyllabusSchema(BaseModel):
     assessment_grading_criteria: Union[AssessmentGradingCriteria, FallbackResponse] = Field(description="The asssessment grading criteria of the course")
     learning_resources: Union[List[LearningResource], FallbackResponse] = Field(description="The learning resources of the course")
     course_schedule: Union[List[CourseScheduleItem], FallbackResponse] = Field(description="The course schedule")
+    
