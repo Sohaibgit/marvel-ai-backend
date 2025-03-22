@@ -62,7 +62,7 @@ def executor(grade_level: str,
         
         syllabus = SyllabusGenerator(verbose=verbose).generate_syllabus(request_args)
 
-    except Exception as e:
+     except Exception as e:
         logger.error(f"Failed to generate syllabus: {str(e)}")
         raise SyllabusGeneratorError(f"Failed to generate syllabus: {str(e)}") from e
 
